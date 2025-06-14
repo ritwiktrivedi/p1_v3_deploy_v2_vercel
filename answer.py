@@ -287,7 +287,7 @@ Your task is to:
 
 ACTUAL DISCOURSE URLs FOUND: {all_urls}
 
-Format your response as JSON with this exact structure:
+You MUST respond with valid JSON in this exact structure:
 {{
   "answer": "Your clear, direct answer here",
   "links": [
@@ -299,63 +299,99 @@ Format your response as JSON with this exact structure:
 }}
 
 CRITICAL RULES:
+- ALWAYS respond with valid JSON, no matter what the question is
 - ONLY use URLs from this exact list: {all_urls}
 - DO NOT make up or generate any URLs
 - If the list is empty, use an empty links array: []
 - Each URL must be copied exactly from the provided list
 - Keep the answer concise but informative
-- If the context doesn't contain enough information, say "I don't have enough information to answer this question"
-"""
+- If the context doesn't contain enough information to answer the question, respond with: "I don't have enough information in the provided context to answer this question."
+- For greetings or unrelated questions, respond politely but mention the context limitation
+- NEVER respond with anything other than the JSON structure above"""
+
+        user_prompt = f"""Context: {context}
+
+Question: {question}
+
+Remember: Respond ONLY with valid JSON in the exact format specified. Do not include any text before or after the JSON."""
 
         response = client.chat.completions.create(
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Context: {context}\n\nQuestion: {question}"}
+                {"role": "user", "content": user_prompt}
             ],
             max_tokens=800,
             temperature=0.1,  # Lower temperature for more consistent output
             top_p=0.95
         )
 
-        response_text = response.choices[0].message.content
+        response_text = response.choices[0].message.content.strip()
         print(f"LLM Response: {response_text}")
 
         # Try to parse as JSON
         try:
             parsed_response = json.loads(response_text)
 
+            # Ensure required keys exist
+            if "answer" not in parsed_response:
+                parsed_response["answer"] = "I don't have enough information in the provided context to answer this question."
+
+            if "links" not in parsed_response:
+                parsed_response["links"] = []
+
             # Validate that URLs in response are from our actual list
-            if "links" in parsed_response:
+            if "links" in parsed_response and isinstance(parsed_response["links"], list):
                 valid_links = []
                 for link in parsed_response["links"]:
-                    if link["url"] in all_urls:
+                    if isinstance(link, dict) and "url" in link and link["url"] in all_urls:
+                        # Ensure text field exists
+                        if "text" not in link:
+                            link["text"] = "Related discussion"
                         valid_links.append(link)
                     else:
-                        print(
-                            f"Warning: Filtered out invalid URL: {link['url']}")
+                        print(f"Warning: Filtered out invalid link: {link}")
                 parsed_response["links"] = valid_links
 
             return parsed_response
 
         except json.JSONDecodeError as e:
             print(f"JSON parsing failed: {e}")
-            # If JSON parsing fails, create a structured response with actual URLs
+            print(f"Raw response: {response_text}")
+
+            # Fallback: create a structured response
+            # Try to extract answer from the response text
+            fallback_answer = "I don't have enough information in the provided context to answer this question."
+
+            # If the response contains some meaningful content, use it
+            if response_text and len(response_text.strip()) > 0:
+                # Clean the response text (remove any JSON-like formatting attempts)
+                cleaned_text = response_text.replace(
+                    '{', '').replace('}', '').replace('"', '').strip()
+                if len(cleaned_text) > 10:  # If there's substantial content
+                    fallback_answer = cleaned_text[:500]  # Limit length
+
+            # Create links from available URLs (limit to 3-5 most relevant)
             links = []
-            for url in all_urls[:5]:  # Limit to 5 links
+            for url in all_urls[:3]:  # Limit to 3 links to avoid overwhelming
                 links.append({
                     "url": url,
                     "text": "Related discussion"
                 })
 
             return {
-                "answer": response_text,
+                "answer": fallback_answer,
                 "links": links
             }
 
     except Exception as e:
         print(f"Error generating discourse response: {e}")
-        raise
+
+        # Final fallback - always return valid structure
+        return {
+            "answer": "I encountered an error while processing your question. Please try again.",
+            "links": []
+        }
 
 
 def answer(question: str, image: str = None):
