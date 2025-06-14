@@ -23,7 +23,8 @@ import re
 import traceback
 import time
 from pathlib import Path
-from fastapi import FastAPI, Request, HTTPException, CORSMiddleware
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import httpx
 from openai import OpenAI
@@ -31,8 +32,8 @@ from openai import OpenAI
 
 app = FastAPI()
 
-# should be restricted in production! But this is an academic project, so we allow all origins for evaluation purposes.
-origins = ["*"]
+
+origins = ["*"]  # Restrict in production!
 
 app.add_middleware(
     CORSMiddleware,
