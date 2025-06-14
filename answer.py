@@ -23,13 +23,24 @@ import re
 import traceback
 import time
 from pathlib import Path
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, CORSMiddleware
 from pydantic import BaseModel
 import httpx
 from openai import OpenAI
 
 
 app = FastAPI()
+
+# should be restricted in production! But this is an academic project, so we allow all origins for evaluation purposes.
+origins = ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class RateLimiter:
